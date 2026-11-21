@@ -277,7 +277,10 @@ final class ChatViewModel {
     /// started arriving. Reasoning does not count. Drives the companion's laptop pose.
     private(set) var hasLiveAnswerText = false
     var activeStreamRecoveryState: ActiveStreamRecoveryState { turn.recoveryState }
-    var liveTokensPerSecond: Double? { turn.liveTokensPerSecond }
+    var liveTokensPerSecond: Double? { turn.liveTokensPerSecond ?? hermesLiveTokensPerSecond }
+    /// The Hermes host's own throughput reading for the running turn, from its
+    /// `session.usage`. A webui stream measures its own; the host reports one.
+    private var hermesLiveTokensPerSecond: Double?
     private(set) var errorMessage: String?
     private(set) var sendErrorMessage: String? {
         didSet {
@@ -8208,6 +8211,11 @@ extension ChatViewModel: HermesChatTurnDelegate {
     func hermesApplyUsage(_ usage: ContextWindowSnapshot) {
         guard contextWindowSnapshot != usage else { return }
         contextWindowSnapshot = usage
+    }
+
+    func hermesApplyTokensPerSecond(_ tokensPerSecond: Double?) {
+        guard hermesLiveTokensPerSecond != tokensPerSecond else { return }
+        hermesLiveTokensPerSecond = tokensPerSecond
     }
 
     func hermesApplyModel(_ model: String) {

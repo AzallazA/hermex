@@ -44,9 +44,20 @@ enum PushBundleIdentifier {
         "com.uzairansar.hermesmobile.branch"
     ]
 
+    /// A sideloaded fork signs under its own identity, so the upstream relay would
+    /// refuse it. The fork's own builds (`com.aabduh.hermex`, plus every `.team`
+    /// suffix a re-sign adds) are allowed through to the host's relay, which is
+    /// where a self-hosted setup points. Nothing else is: an unknown bundle id
+    /// still means this build cannot register.
+    static let forkPrefixes: [String] = ["com.aabduh.hermex"]
+
     static func current(bundle: Bundle = .main) -> String? {
-        guard let identifier = bundle.bundleIdentifier, supported.contains(identifier) else { return nil }
+        guard let identifier = bundle.bundleIdentifier, accepts(identifier) else { return nil }
         return identifier
+    }
+
+    static func accepts(_ identifier: String) -> Bool {
+        supported.contains(identifier) || forkPrefixes.contains { identifier.hasPrefix($0) }
     }
 }
 
