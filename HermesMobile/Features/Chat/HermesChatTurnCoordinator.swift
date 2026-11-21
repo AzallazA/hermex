@@ -26,6 +26,11 @@ import SwiftData
     /// The attach found the session's root: a Bot Chat's canonical root, or a session's key.
     func hermesDidIdentify(root: String)
     func hermesApplyUsage(_ usage: ContextWindowSnapshot)
+    /// The host's own read of how fast this turn is producing tokens, from its
+    /// `session.usage`: `tokens_per_s` on the session counters, `avg_tps` on the
+    /// turn's usage block. Nil when it has no reading yet, so the chat hides the
+    /// figure rather than estimating one.
+    func hermesApplyTokensPerSecond(_ tokensPerSecond: Double?)
     /// The model `session.info` reports: the Profile's default unless the host says otherwise.
     func hermesApplyModel(_ model: String)
     /// Why the session cannot attach, or nil once it has.
@@ -931,6 +936,7 @@ struct HermesChatTranscript: Equatable {
     // MARK: Turns
 
     private func beginTurn(startedAt: Double?, prompt: String?) {
+        delegate?.hermesApplyTokensPerSecond(nil)
         turnsStarted += 1
         latestRunEnding = nil; successfulResponseCompletion = nil
         pendingEnding = nil; awaitingStart = false; stopRequested = false
@@ -1053,6 +1059,7 @@ struct HermesChatTranscript: Equatable {
             applyTitle(title)
         case "session.usage":
             if let usage = Self.contextWindow(payload["usage"]) { delegate?.hermesApplyUsage(usage) }
+            delegate?.hermesApplyTokensPerSecond(Self.tokensPerSecond(payload))
         case "session.info":
             applyInfo(payload)
         case "message.complete":
@@ -1136,6 +1143,7 @@ struct HermesChatTranscript: Equatable {
         activity.turnDidComplete(payload)
         completedFailed = ending == .failed
         if let usage = Self.contextWindow(payload["usage"]) { delegate?.hermesApplyUsage(usage) }
+        delegate?.hermesApplyTokensPerSecond(Self.tokensPerSecond(payload))
         // Only a receipt for the whole turn retires its streamed rows (`persisted_turn`, 0.21.5).
         let receipt = payload["persisted_turn"]
         if receipt["complete"].flag == true, let reply = receipt["final_assistant_row_id"].integer {
@@ -1820,4 +1828,16 @@ extension HermesChatTurnCoordinator: HermesConversationOwner {
         guard !retrying else { return }
         delegate?.hermesConnectionDidChange(failure: BotConnectionAdvice.message(for: failure, address: engine.connection.address))
     }
+
+    /// The turn's throughput as the host measures it: `tokens_per_s` on the session
+    /// counters (`gateway/session_usage.py`) or `avg_tps` on the usage block a viewer
+    /// reads. Absent, zero or non-finite readings are nil — never a fabricated speed.
+    static func tokensPerSecond(_ payload: BotJSON) -> Double? {
+        let usage = payload["usage"]
+        for candidate in [usage["tokens_per_s"], usage["avg_tps"], payload["tokens_per_s"]] {
+            if let value = candidate.number, value.isFinite, value > 0 { return value }
+        }
+        return nil
+    }
+
 }
