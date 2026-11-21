@@ -534,3 +534,19 @@ private extension JSONValue {
         return String(data: data, encoding: .utf8)
     }
 }
+
+extension ChatMessage {
+    /// The same row with a measured response speed. The host's own transcript carries
+    /// no per-row speed, so a Hermes reply's figure is stamped onto the row the turn
+    /// just settled instead of waiting for a re-read that would drop it.
+    func withTurnTps(_ tokensPerSecond: Double?) -> ChatMessage {
+        ChatMessage(
+            role: role, content: content, timestamp: timestamp, messageId: messageId,
+            name: name, toolCallId: toolCallId, toolUseId: toolUseId, toolCalls: toolCalls,
+            contentParts: contentParts, reasoning: reasoning, attachments: attachments,
+            displayKind: displayKind, displayMetadata: displayMetadata,
+            turnTps: tokensPerSecond, turnDuration: turnDuration,
+            rowID: rowID, isCompacted: isCompacted
+        )
+    }
+}

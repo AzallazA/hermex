@@ -281,6 +281,9 @@ final class ChatViewModel {
     /// The Hermes host's own throughput reading for the running turn, from its
     /// `session.usage`. A webui stream measures its own; the host reports one.
     private var hermesLiveTokensPerSecond: Double?
+    /// The row this turn's speed was stamped on, and the figure. The host's settled
+    /// transcript carries no speed, so a rebuild has to put it back.
+    private var hermesTokensPerSecondStamp: (messageID: String, tokensPerSecond: Double)?
     private(set) var errorMessage: String?
     private(set) var sendErrorMessage: String? {
         didSet {
@@ -7971,6 +7974,8 @@ extension ChatViewModel: HermesChatTurnDelegate {
         flushPendingStreamingContent()
         archiveLiveActivityForNewTurn()
         streamingAssistantMessageID = nil
+        hermesLiveTokensPerSecond = nil
+        hermesTokensPerSecondStamp = nil
         responseCompletionNeedsTranscriptRefresh = false
         if let prompt {
             messages.append(HermesChatTurnCoordinator.displayed(ChatMessage(
@@ -8007,6 +8012,12 @@ extension ChatViewModel: HermesChatTurnDelegate {
             + (transcript.streamingReply.map { [$0] } ?? [])
         messagesOffset = Self.hermesMessagesOffset(keeping: messages, at: messagesOffset, in: next)
         messages = next
+        // The host's rows carry no speed, and this turn's figure would vanish with
+        // them: put it back on the row it was measured for.
+        if let stamp = hermesTokensPerSecondStamp,
+           let index = messages.firstIndex(where: { $0.messageId == stamp.messageID }) {
+            messages[index] = messages[index].withTurnTps(stamp.tokensPerSecond)
+        }
         transcriptRevision &+= 1
         hasOlderMessages = transcript.hasOlder
         setCompletedToolCallGroups(transcript.toolCallGroups)
@@ -8216,6 +8227,15 @@ extension ChatViewModel: HermesChatTurnDelegate {
     func hermesApplyTokensPerSecond(_ tokensPerSecond: Double?) {
         guard hermesLiveTokensPerSecond != tokensPerSecond else { return }
         hermesLiveTokensPerSecond = tokensPerSecond
+        guard let tokensPerSecond else { return }
+        // The host measures a turn as one figure and publishes it as the turn ends,
+        // when the reply's row has already settled: the live header no longer reads
+        // it, so the row carries it as `turnTps`, the way a webui reply does.
+        guard let index = messages.lastIndex(where: { $0.role == "assistant" }),
+              let messageID = messages[index].messageId
+        else { return }
+        messages[index] = messages[index].withTurnTps(tokensPerSecond)
+        hermesTokensPerSecondStamp = (messageID, tokensPerSecond)
     }
 
     func hermesApplyModel(_ model: String) {
